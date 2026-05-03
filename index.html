@@ -99,6 +99,11 @@ canvas {
 }
 canvas[data-kind="geometry"] {
   height: 300px;
+  cursor: grab;
+  touch-action: none;
+}
+canvas[data-kind="geometry"].dragging {
+  cursor: grabbing;
 }
 @media (max-width: 1180px) {
   .shape-row { grid-template-columns: 1fr 1fr; }
@@ -133,6 +138,11 @@ const metrics = [
 const slider = document.getElementById("angleSlider");
 const angleValue = document.getElementById("angleValue");
 const rows = document.getElementById("rows");
+const viewState = {
+  azimuth: -45 * Math.PI / 180,
+  elevation: 25 * Math.PI / 180
+};
+let dragState = null;
 slider.max = String(data.angles.length - 1);
 
 function canvasFor(kind, shapeIndex, metricIndex) {
@@ -140,7 +150,48 @@ function canvasFor(kind, shapeIndex, metricIndex) {
   canvas.dataset.kind = kind;
   canvas.dataset.shapeIndex = String(shapeIndex);
   if (metricIndex !== undefined) canvas.dataset.metricIndex = String(metricIndex);
+  if (kind === "geometry") attachGeometryInteraction(canvas);
   return canvas;
+}
+
+function clamp(value, minValue, maxValue) {
+  return Math.min(maxValue, Math.max(minValue, value));
+}
+
+function attachGeometryInteraction(canvas) {
+  const finishDrag = () => {
+    if (!dragState) return;
+    canvas.classList.remove("dragging");
+    dragState = null;
+  };
+  canvas.addEventListener("pointerdown", (event) => {
+    dragState = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      azimuth: viewState.azimuth,
+      elevation: viewState.elevation
+    };
+    canvas.classList.add("dragging");
+    canvas.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+    const dx = event.clientX - dragState.startX;
+    const dy = event.clientY - dragState.startY;
+    viewState.azimuth = dragState.azimuth + dx * 0.01;
+    viewState.elevation = clamp(dragState.elevation - dy * 0.01, -80 * Math.PI / 180, 80 * Math.PI / 180);
+    update();
+  });
+  canvas.addEventListener("pointerup", finishDrag);
+  canvas.addEventListener("pointercancel", finishDrag);
+  canvas.addEventListener("lostpointercapture", finishDrag);
+  canvas.addEventListener("dblclick", () => {
+    viewState.azimuth = -45 * Math.PI / 180;
+    viewState.elevation = 25 * Math.PI / 180;
+    update();
+  });
 }
 
 function buildRows() {
@@ -215,8 +266,8 @@ function footprint(shape, size) {
 }
 
 function projectFactory(width, height) {
-  const azimuth = -45 * Math.PI / 180;
-  const elevation = 25 * Math.PI / 180;
+  const azimuth = viewState.azimuth;
+  const elevation = viewState.elevation;
   const cosA = Math.cos(azimuth);
   const sinA = Math.sin(azimuth);
   const cosE = Math.cos(elevation);
